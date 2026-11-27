@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Check that no root-anchored `.dockerignore` entry excludes tracked files.
+"""Check that no `.dockerignore` entry excludes tracked files.
 
 Docker builds bind-mount `.git` but copy the working tree through the build
 context, so git sees any tracked file that `.dockerignore` drops as deleted.
@@ -19,15 +19,19 @@ DOCKERIGNORE = Path(".dockerignore")
 
 
 def main() -> int:
-    rooted = [
-        line.strip().strip("/")
+    # Docker matches every pattern from the context root (`foo` == `/foo`),
+    # which is what git's `:(glob)` pathspec does too.
+    # shortcut: `!` exceptions are skipped, so an entry they re-include is
+    # still reported; handle them if `.dockerignore` starts using them.
+    patterns = [
+        f":(glob){line.strip().strip('/')}"
         for line in DOCKERIGNORE.read_text(encoding="utf-8").splitlines()
-        if line.startswith("/")
+        if line.strip() and not line.strip().startswith(("#", "!"))
     ]
-    if not rooted:
+    if not patterns:
         return 0
     tracked = subprocess.run(
-        ["git", "ls-files", "--", *rooted],
+        ["git", "ls-files", "--", *patterns],
         check=True,
         stdout=subprocess.PIPE,
         text=True,
